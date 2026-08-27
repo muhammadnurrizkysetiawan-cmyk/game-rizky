@@ -1,0 +1,2008 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport"
+content="width=device-width,initial-scale=1.0,user-scalable=no">
+
+<title>Adventure World</title>
+
+<style>
+*{
+  box-sizing:border-box;
+  margin:0;
+  padding:0;
+}
+
+body{
+  overflow:hidden;
+  background:#78cfff;
+  touch-action:none;
+  font-family:Arial,sans-serif;
+}
+
+canvas{
+  width:100vw;
+  height:100vh;
+  display:block;
+}
+
+.controls{
+  position:fixed;
+  left:0;
+  bottom:18px;
+  width:100%;
+  padding:0 18px;
+  display:flex;
+  justify-content:space-between;
+  pointer-events:none;
+}
+
+.leftControls{
+  display:flex;
+  gap:12px;
+}
+
+.control{
+  width:64px;
+  height:64px;
+  border:0;
+  border-radius:50%;
+  background:rgba(0,0,0,.35);
+  color:white;
+  font-size:27px;
+  font-weight:bold;
+  pointer-events:auto;
+  user-select:none;
+}
+
+.shoot{
+  position:fixed;
+  right:105px;
+  bottom:25px;
+  width:58px;
+  height:58px;
+  border-radius:50%;
+  border:0;
+  background:rgba(255,170,0,.75);
+  color:white;
+  font-size:23px;
+}
+
+#nextStage{
+  display:none;
+  position:fixed;
+  left:50%;
+  top:55%;
+  transform:translate(-50%,-50%);
+  width:230px;
+  height:60px;
+  border:0;
+  border-radius:15px;
+  background:#27a844;
+  color:white;
+  font-size:18px;
+  font-weight:bold;
+}
+</style>
+</head>
+
+<body>
+
+<canvas id="game"></canvas>
+
+<div class="controls">
+
+  <div class="leftControls">
+    <button class="control" id="left">◀</button>
+    <button class="control" id="right">▶</button>
+  </div>
+
+  <button class="control" id="jump">▲</button>
+
+</div>
+
+<button class="shoot" id="shoot">●</button>
+
+<button id="nextStage">
+  STAGE BERIKUTNYA ➜
+</button>
+
+<script>
+
+/* ==================================
+   CANVAS
+================================== */
+
+const canvas=document.getElementById("game");
+const ctx=canvas.getContext("2d");
+
+canvas.width=1200;
+canvas.height=650;
+
+
+/* ==================================
+   KARAKTER
+================================== */
+
+const characterImage=new Image();
+
+characterImage.src="character.png";
+
+let characterLoaded=false;
+
+characterImage.onload=()=>{
+  characterLoaded=true;
+};
+
+
+/* ==================================
+   GAME DATA
+================================== */
+
+let stage=1;
+let score=0;
+let lives=3;
+
+let bossHP=12;
+let bossDamage=0;
+
+let cameraX=0;
+
+let won=false;
+let gameOver=false;
+
+let stageLength=5000;
+
+
+/* ==================================
+   PLAYER
+================================== */
+
+const player={
+  x:150,
+  y:400,
+
+  w:55,
+  h:80,
+
+  vx:0,
+  vy:0,
+
+  speed:5,
+  jumpPower:14,
+
+  grounded:false,
+
+  facing:1,
+
+  walkFrame:0
+};
+
+
+/* ==================================
+   CONTROL
+================================== */
+
+const keys={
+  left:false,
+  right:false
+};
+
+
+/* ==================================
+   OBJECTS
+================================== */
+
+let platforms=[];
+let coins=[];
+let enemies=[];
+let bullets=[];
+let pickups=[];
+
+let boss=null;
+
+
+/* ==================================
+   STAGE
+================================== */
+
+function createStage(){
+
+  platforms=[];
+  coins=[];
+  enemies=[];
+  bullets=[];
+  pickups=[];
+  boss=null;
+
+  player.x=150;
+  player.y=400;
+
+  player.vx=0;
+  player.vy=0;
+
+  player.facing=1;
+
+  cameraX=0;
+
+  won=false;
+  gameOver=false;
+
+  bossHP=12;
+  bossDamage=0;
+
+  stageLength=5000;
+
+
+  /* ==========================
+     TANAH UTAMA
+  ========================== */
+
+  for(let x=0;x<stageLength;x+=500){
+
+    platforms.push({
+      x:x,
+      y:540,
+      w:500,
+      h:110
+    });
+
+  }
+
+
+  /* ==========================
+     PLATFORM
+  ========================== */
+
+  for(let i=0;i<24;i++){
+
+    const x=300+i*190;
+
+    const y=
+      360+
+      Math.sin(i*1.5)*80;
+
+    platforms.push({
+      x:x,
+      y:y,
+      w:130,
+      h:25
+    });
+
+  }
+
+
+  /* ==========================
+     KOIN
+  ========================== */
+
+  for(let i=0;i<35;i++){
+
+    coins.push({
+      x:350+i*130,
+      y:350+(i%3)*-60,
+      taken:false
+    });
+
+  }
+
+
+  /* ==========================
+     MUSUH
+  ========================== */
+
+  for(let i=0;i<18;i++){
+
+    const type=
+      i%2===0 ?
+      "cockroach" :
+      "rat";
+
+    enemies.push({
+
+      type:type,
+
+      x:500+i*250,
+
+      y:475,
+
+      w:type==="rat"?55:45,
+
+      h:type==="rat"?45:35,
+
+      vx:
+        type==="rat"?
+        1.8:
+        2.5,
+
+      alive:true
+
+    });
+
+  }
+
+
+  /* ==========================
+     PELURU / PICKUP
+  ========================== */
+
+  for(let i=0;i<15;i++){
+
+    pickups.push({
+
+      x:600+i*300,
+
+      y:470,
+
+      w:25,
+
+      h:25,
+
+      taken:false
+
+    });
+
+  }
+
+
+  /* ==========================
+     BOSS STAGE 10
+  ========================== */
+
+  if(stage===10){
+
+    boss={
+
+      x:4300,
+
+      y:390,
+
+      w:130,
+
+      h:130,
+
+      hp:12,
+
+      direction:-1,
+
+      attackTimer:0,
+
+      projectiles:[]
+
+    };
+
+    pickups=[];
+
+    enemies=[];
+
+  }
+
+}
+
+
+/* ==================================
+   COLLISION
+================================== */
+
+function collision(a,b){
+
+  return(
+
+    a.x < b.x+b.w &&
+
+    a.x+a.w > b.x &&
+
+    a.y < b.y+b.h &&
+
+    a.y+a.h > b.y
+
+  );
+
+}
+
+
+/* ==================================
+   JUMP
+================================== */
+
+function jump(){
+
+  if(
+
+    player.grounded &&
+
+    !won &&
+
+    !gameOver
+
+  ){
+
+    player.vy=-player.jumpPower;
+
+    player.grounded=false;
+
+  }
+
+}
+
+
+/* ==================================
+   SHOOT
+================================== */
+
+function shoot(){
+
+  if(won || gameOver)
+    return;
+
+  if(bullets.length>=8)
+    return;
+
+  bullets.push({
+
+    x:player.x+
+      (player.facing===1?
+       player.w:
+       -10),
+
+    y:player.y+35,
+
+    w:15,
+
+    h:8,
+
+    vx:player.facing*9
+
+  });
+
+}
+
+
+/* ==================================
+   UPDATE PLAYER
+================================== */
+
+function updatePlayer(){
+
+  if(keys.left){
+
+    player.vx=-player.speed;
+
+    player.facing=-1;
+
+    player.walkFrame+=0.25;
+
+  }
+
+  else if(keys.right){
+
+    player.vx=player.speed;
+
+    player.facing=1;
+
+    player.walkFrame+=0.25;
+
+  }
+
+  else{
+
+    player.vx*=0.8;
+
+  }
+
+
+  player.vy+=0.65;
+
+  player.x+=player.vx;
+
+  player.y+=player.vy;
+
+
+  player.grounded=false;
+
+
+  /* PLATFORM */
+
+  for(const p of platforms){
+
+    if(
+
+      player.x+player.w>p.x &&
+
+      player.x<p.x+p.w &&
+
+      player.y+player.h<=p.y+20 &&
+
+      player.y+player.h+player.vy>=p.y
+
+    ){
+
+      player.y=p.y-player.h;
+
+      player.vy=0;
+
+      player.grounded=true;
+
+    }
+
+  }
+
+
+  /* JATUH */
+
+  if(player.y>750){
+
+    takeDamage();
+
+  }
+
+
+  if(player.x<0)
+    player.x=0;
+
+}
+
+
+/* ==================================
+   DAMAGE PLAYER
+================================== */
+
+function takeDamage(){
+
+  lives--;
+
+  if(lives<=0){
+
+    gameOver=true;
+
+  }
+
+  else{
+
+    player.x=
+      Math.max(100,player.x-400);
+
+    player.y=300;
+
+    player.vx=0;
+
+    player.vy=0;
+
+  }
+
+}
+
+
+/* ==================================
+   COIN
+================================== */
+
+function updateCoins(){
+
+  for(const c of coins){
+
+    if(c.taken)
+      continue;
+
+    const box={
+      x:c.x,
+      y:c.y,
+      w:25,
+      h:25
+    };
+
+    if(collision(player,box)){
+
+      c.taken=true;
+
+      score+=10;
+
+    }
+
+  }
+
+}
+
+
+/* ==================================
+   PICKUP PELURU
+================================== */
+
+function updatePickups(){
+
+  for(const p of pickups){
+
+    if(p.taken)
+      continue;
+
+    if(collision(player,p)){
+
+      p.taken=true;
+
+      score+=5;
+
+      /* dapat amunisi */
+
+    }
+
+  }
+
+}
+
+
+/* ==================================
+   MUSUH
+================================== */
+
+function updateEnemies(){
+
+  for(const e of enemies){
+
+    if(!e.alive)
+      continue;
+
+    e.x+=e.vx;
+
+
+    /* BALIK ARAH */
+
+    if(
+
+      e.x<0 ||
+
+      e.x>stageLength-100
+
+    ){
+
+      e.vx*=-1;
+
+    }
+
+
+    /* PLAYER MENYENTUH */
+
+    if(collision(player,e)){
+
+      if(
+
+        player.vy>0 &&
+
+        player.y+player.h<
+        e.y+20
+
+      ){
+
+        e.alive=false;
+
+        player.vy=-10;
+
+        score+=30;
+
+      }
+
+      else{
+
+        takeDamage();
+
+      }
+
+    }
+
+  }
+
+}
+
+
+/* ==================================
+   BULLET
+================================== */
+
+function updateBullets(){
+
+  for(let i=bullets.length-1;i>=0;i--){
+
+    const b=bullets[i];
+
+    b.x+=b.vx;
+
+
+    if(
+
+      b.x<cameraX-200 ||
+
+      b.x>cameraX+1400
+
+    ){
+
+      bullets.splice(i,1);
+
+      continue;
+
+    }
+
+
+    /* BOSS */
+
+    if(stage===10 && boss){
+
+      if(collision(b,boss)){
+
+        boss.hp--;
+
+        score+=50;
+
+        bullets.splice(i,1);
+
+        if(boss.hp<=0){
+
+          boss=null;
+
+          won=true;
+
+        }
+
+      }
+
+    }
+
+  }
+
+}
+
+
+/* ==================================
+   BOSS
+================================== */
+
+function updateBoss(){
+
+  if(stage!==10 || !boss)
+    return;
+
+
+  /* GERAK */
+
+  boss.x+=boss.direction*1.5;
+
+
+  if(
+
+    boss.x<3900 ||
+
+    boss.x>4700
+
+  ){
+
+    boss.direction*=-1;
+
+  }
+
+
+  /* SERANGAN */
+
+  boss.attackTimer++;
+
+
+  if(boss.attackTimer>100){
+
+    boss.attackTimer=0;
+
+    boss.projectiles.push({
+
+      x:boss.x,
+
+      y:boss.y+50,
+
+      w:25,
+
+      h:15,
+
+      vx:
+        player.x<boss.x?
+        -6:
+        6
+
+    });
+
+  }
+
+
+  /* PROJECTILE BOSS */
+
+  for(
+    let i=boss.projectiles.length-1;
+    i>=0;
+    i--
+  ){
+
+    const p=boss.projectiles[i];
+
+    p.x+=p.vx;
+
+
+    if(collision(player,p)){
+
+      boss.projectiles.splice(i,1);
+
+      takeDamage();
+
+      continue;
+
+    }
+
+
+    if(
+      p.x<cameraX-200 ||
+      p.x>cameraX+1400
+    ){
+
+      boss.projectiles.splice(i,1);
+
+    }
+
+  }
+
+
+  /* BOSS MENDEKATI PLAYER */
+
+  if(
+    Math.abs(player.x-boss.x)<170
+  ){
+
+    if(
+      Math.random()<0.015
+    ){
+
+      takeDamage();
+
+    }
+
+  }
+
+}
+
+
+/* ==================================
+   CAMERA
+================================== */
+
+function updateCamera(){
+
+  cameraX=
+    player.x-400;
+
+  if(cameraX<0)
+    cameraX=0;
+
+  if(
+    cameraX>
+    stageLength-1200
+  ){
+
+    cameraX=
+      stageLength-1200;
+
+  }
+
+}
+
+
+/* ==================================
+   FINISH
+================================== */
+
+function updateFinish(){
+
+  if(stage<10){
+
+    if(player.x>=stageLength-250){
+
+      won=true;
+
+    }
+
+  }
+
+}
+
+
+/* ==================================
+   BACKGROUND
+================================== */
+
+function drawBackground(){
+
+  /* LANGIT */
+
+  ctx.fillStyle="#74cfff";
+
+  ctx.fillRect(
+    0,0,
+    canvas.width,
+    canvas.height
+  );
+
+
+  /* MATAHARI */
+
+  ctx.fillStyle="#ffd83d";
+
+  ctx.beginPath();
+
+  ctx.arc(
+    950,100,
+    50,
+    0,
+    Math.PI*2
+  );
+
+  ctx.fill();
+
+
+  /* AWAN */
+
+  ctx.fillStyle="white";
+
+  for(
+    let x=-cameraX%600-600;
+    x<1600;
+    x+=600
+  ){
+
+    ctx.beginPath();
+
+    ctx.arc(
+      x+100,130,
+      25,0,Math.PI*2
+    );
+
+    ctx.arc(
+      x+135,115,
+      35,0,Math.PI*2
+    );
+
+    ctx.arc(
+      x+175,135,
+      25,0,Math.PI*2
+    );
+
+    ctx.fill();
+
+  }
+
+
+  /* GUNUNG */
+
+  ctx.fillStyle="#6caf70";
+
+  for(
+    let x=-cameraX%700-700;
+    x<1800;
+    x+=700
+  ){
+
+    ctx.beginPath();
+
+    ctx.moveTo(x,540);
+
+    ctx.lineTo(x+350,250);
+
+    ctx.lineTo(x+700,540);
+
+    ctx.fill();
+
+  }
+
+
+  /* POHON */
+
+  for(
+    let x=-cameraX%420-420;
+    x<1500;
+    x+=420
+  ){
+
+    /* batang */
+
+    ctx.fillStyle="#79502b";
+
+    ctx.fillRect(
+      x+70,
+      400,
+      35,
+      140
+    );
+
+
+    /* daun */
+
+    ctx.fillStyle="#268b45";
+
+    ctx.beginPath();
+
+    ctx.arc(
+      x+85,
+      360,
+      70,
+      0,
+      Math.PI*2
+    );
+
+    ctx.fill();
+
+    ctx.beginPath();
+
+    ctx.arc(
+      x+40,
+      390,
+      45,
+      0,
+      Math.PI*2
+    );
+
+    ctx.fill();
+
+    ctx.beginPath();
+
+    ctx.arc(
+      x+130,
+      390,
+      45,
+      0,
+      Math.PI*2
+    );
+
+    ctx.fill();
+
+  }
+
+
+  /* RUMAH */
+
+  for(
+    let x=-cameraX%900+300;
+    x<1600;
+    x+=900
+  ){
+
+    ctx.fillStyle="#e6d5a7";
+
+    ctx.fillRect(
+      x,
+      410,
+      130,
+      100
+    );
+
+    ctx.fillStyle="#a94442";
+
+    ctx.beginPath();
+
+    ctx.moveTo(x-15,410);
+
+    ctx.lineTo(x+65,350);
+
+    ctx.lineTo(x+145,410);
+
+    ctx.fill();
+
+    ctx.fillStyle="#6bb7df";
+
+    ctx.fillRect(
+      x+20,
+      435,
+      30,
+      30
+    );
+
+  }
+
+}
+
+
+/* ==================================
+   DRAW WORLD
+================================== */
+
+function drawWorld(){
+
+  ctx.save();
+
+  ctx.translate(-cameraX,0);
+
+
+  /* TANAH */
+
+  for(const p of platforms){
+
+    ctx.fillStyle="#80552d";
+
+    ctx.fillRect(
+      p.x,
+      p.y,
+      p.w,
+      p.h
+    );
+
+
+    ctx.fillStyle="#36a852";
+
+    ctx.fillRect(
+      p.x,
+      p.y,
+      p.w,
+      14
+    );
+
+  }
+
+
+  /* KOIN */
+
+  for(const c of coins){
+
+    if(c.taken)
+      continue;
+
+    ctx.fillStyle="#ffd700";
+
+    ctx.beginPath();
+
+    ctx.arc(
+      c.x+12,
+      c.y+12,
+      12,
+      0,
+      Math.PI*2
+    );
+
+    ctx.fill();
+
+  }
+
+
+  /* PELURU PICKUP */
+
+  for(const p of pickups){
+
+    if(p.taken)
+      continue;
+
+    ctx.fillStyle="#333";
+
+    ctx.fillRect(
+      p.x,
+      p.y,
+      p.w,
+      p.h
+    );
+
+    ctx.fillStyle="#ffd000";
+
+    ctx.fillRect(
+      p.x+5,
+      p.y+5,
+      15,
+      15
+    );
+
+  }
+
+
+  /* MUSUH */
+
+  for(const e of enemies){
+
+    if(!e.alive)
+      continue;
+
+
+    if(e.type==="cockroach"){
+
+      /* BADAN */
+
+      ctx.fillStyle="#542b1d";
+
+      ctx.fillRect(
+        e.x,
+        e.y+10,
+        e.w,
+        22
+      );
+
+
+      /* KEPALA */
+
+      ctx.fillStyle="#3c2118";
+
+      ctx.beginPath();
+
+      ctx.arc(
+        e.x+e.w-5,
+        e.y+20,
+        12,
+        0,
+        Math.PI*2
+      );
+
+      ctx.fill();
+
+
+      /* KAKI */
+
+      ctx.strokeStyle="#301810";
+
+      ctx.lineWidth=3;
+
+      for(let k=0;k<3;k++){
+
+        ctx.beginPath();
+
+        ctx.moveTo(
+          e.x+10+k*10,
+          e.y+28
+        );
+
+        ctx.lineTo(
+          e.x+k*15,
+          e.y+42
+        );
+
+        ctx.stroke();
+
+      }
+
+    }
+
+    else{
+
+      /* TIKUS */
+
+      ctx.fillStyle="#777";
+
+      ctx.beginPath();
+
+      ctx.ellipse(
+        e.x+25,
+        e.y+22,
+        28,
+        20,
+        0,
+        0,
+        Math.PI*2
+      );
+
+      ctx.fill();
+
+
+      /* TELINGA */
+
+      ctx.beginPath();
+
+      ctx.arc(
+        e.x+10,
+        e.y+7,
+        10,
+        0,
+        Math.PI*2
+      );
+
+      ctx.fill();
+
+
+      /* MATA */
+
+      ctx.fillStyle="#111";
+
+      ctx.fillRect(
+        e.x+40,
+        e.y+15,
+        5,
+        5
+      );
+
+
+      /* EKOR */
+
+      ctx.strokeStyle="#777";
+
+      ctx.lineWidth=4;
+
+      ctx.beginPath();
+
+      ctx.moveTo(
+        e.x,
+        e.y+25
+      );
+
+      ctx.quadraticCurveTo(
+        e.x-30,
+        e.y+5,
+        e.x-45,
+        e.y+25
+      );
+
+      ctx.stroke();
+
+    }
+
+  }
+
+
+  /* PELURU */
+
+  for(const b of bullets){
+
+    ctx.fillStyle="#333";
+
+    ctx.fillRect(
+      b.x,
+      b.y,
+      b.w,
+      b.h
+    );
+
+  }
+
+
+  /* BOSS */
+
+  if(boss){
+
+    ctx.fillStyle="#7b3fa1";
+
+    ctx.fillRect(
+      boss.x,
+      boss.y,
+      boss.w,
+      boss.h
+    );
+
+
+    /* MATA */
+
+    ctx.fillStyle="white";
+
+    ctx.fillRect(
+      boss.x+25,
+      boss.y+30,
+      25,
+      25
+    );
+
+    ctx.fillRect(
+      boss.x+80,
+      boss.y+30,
+      25,
+      25
+    );
+
+
+    ctx.fillStyle="#222";
+
+    ctx.fillRect(
+      boss.x+35,
+      boss.y+40,
+      8,
+      8
+    );
+
+    ctx.fillRect(
+      boss.x+90,
+      boss.y+40,
+      8,
+      8
+    );
+
+
+    /* TANGAN */
+
+    ctx.fillStyle="#66317f";
+
+    ctx.fillRect(
+      boss.x-30,
+      boss.y+50,
+      30,
+      25
+    );
+
+    ctx.fillRect(
+      boss.x+boss.w,
+      boss.y+50,
+      30,
+      25
+    );
+
+
+    /* HP BAR */
+
+    ctx.fillStyle="#222";
+
+    ctx.fillRect(
+      boss.x,
+      boss.y-30,
+      boss.w,
+      15
+    );
+
+    ctx.fillStyle="#e33";
+
+    ctx.fillRect(
+      boss.x,
+      boss.y-30,
+      boss.w*(boss.hp/12),
+      15
+    );
+
+
+    /* SERANGAN BOSS */
+
+    for(const p of boss.projectiles){
+
+      ctx.fillStyle="#ff8c00";
+
+      ctx.fillRect(
+        p.x,
+        p.y,
+        p.w,
+        p.h
+      );
+
+    }
+
+  }
+
+
+  /* BENDERA */
+
+  if(stage<10){
+
+    ctx.fillStyle="#222";
+
+    ctx.fillRect(
+      stageLength-250,
+      300,
+      10,
+      240
+    );
+
+    ctx.fillStyle="#e33";
+
+    ctx.beginPath();
+
+    ctx.moveTo(
+      stageLength-240,
+      300
+    );
+
+    ctx.lineTo(
+      stageLength-120,
+      340
+    );
+
+    ctx.lineTo(
+      stageLength-240,
+      380
+    );
+
+    ctx.fill();
+
+  }
+
+
+  /* PLAYER */
+
+  drawPlayer();
+
+
+  ctx.restore();
+
+}
+
+
+/* ==================================
+   DRAW PLAYER
+================================== */
+
+function drawPlayer(){
+
+  const bounce=
+    player.grounded &&
+    Math.abs(player.vx)>0.5
+    ?
+    Math.sin(player.walkFrame)*3
+    :
+    0;
+
+
+  ctx.save();
+
+  ctx.translate(
+    player.x+player.w/2,
+    player.y+bounce
+  );
+
+  if(player.facing===-1)
+    ctx.scale(-1,1);
+
+
+  if(characterLoaded){
+
+    ctx.drawImage(
+      characterImage,
+      -player.w/2,
+      -10,
+      player.w,
+      player.h+20
+    );
+
+  }
+
+  else{
+
+    /* FALLBACK */
+
+    ctx.fillStyle="#3155ff";
+
+    ctx.fillRect(
+      -25,
+      0,
+      50,
+      70
+    );
+
+    ctx.fillStyle="#ffd0a0";
+
+    ctx.beginPath();
+
+    ctx.arc(
+      0,
+      -5,
+      23,
+      0,
+      Math.PI*2
+    );
+
+    ctx.fill();
+
+  }
+
+
+  ctx.restore();
+
+}
+
+
+/* ==================================
+   UI
+================================== */
+
+function drawUI(){
+
+  ctx.fillStyle="white";
+
+  ctx.font="24px Arial";
+
+  ctx.fillText(
+    "⭐ "+score,
+    20,
+    35
+  );
+
+  ctx.fillText(
+    "❤️ "+lives,
+    20,
+    65
+  );
+
+  ctx.fillText(
+    "STAGE "+stage+"/10",
+    20,
+    95
+  );
+
+
+  if(stage===10 && boss){
+
+    ctx.fillStyle="white";
+
+    ctx.font="20px Arial";
+
+    ctx.fillText(
+      "BOSS HP: "+boss.hp+"/12",
+      20,
+      125
+    );
+
+  }
+
+
+  /* WIN */
+
+  if(won){
+
+    ctx.fillStyle=
+      "rgba(0,0,0,.72)";
+
+    ctx.fillRect(
+      0,0,
+      canvas.width,
+      canvas.height
+    );
+
+
+    ctx.fillStyle="white";
+
+    ctx.textAlign="center";
+
+    ctx.font="48px Arial";
+
+
+    if(stage<10){
+
+      ctx.fillText(
+        "🎉 STAGE "+stage+" SELESAI!",
+        canvas.width/2,
+        260
+      );
+
+      ctx.font="23px Arial";
+
+      ctx.fillText(
+        "Siap lanjut ke stage berikutnya?",
+        canvas.width/2,
+        310
+      );
+
+    }
+
+    else{
+
+      ctx.fillText(
+        "🏆 BOSS KALAH!",
+        canvas.width/2,
+        260
+      );
+
+      ctx.font="23px Arial";
+
+      ctx.fillText(
+        "Kamu menamatkan 10 stage!",
+        canvas.width/2,
+        310
+      );
+
+    }
+
+
+    ctx.textAlign="left";
+
+  }
+
+
+  /* GAME OVER */
+
+  if(gameOver){
+
+    ctx.fillStyle=
+      "rgba(0,0,0,.75)";
+
+    ctx.fillRect(
+      0,0,
+      canvas.width,
+      canvas.height
+    );
+
+
+    ctx.fillStyle="white";
+
+    ctx.textAlign="center";
+
+    ctx.font="50px Arial";
+
+    ctx.fillText(
+      "GAME OVER",
+      canvas.width/2,
+      260
+    );
+
+    ctx.font="23px Arial";
+
+    ctx.fillText(
+      "Tekan RESTART untuk mencoba lagi",
+      canvas.width/2,
+      310
+    );
+
+    ctx.textAlign="left";
+
+  }
+
+}
+
+
+/* ==================================
+   NEXT STAGE
+================================== */
+
+document.getElementById(
+  "nextStage"
+).onclick=()=>{
+
+  if(stage<10){
+
+    stage++;
+
+    createStage();
+
+    document.getElementById(
+      "nextStage"
+    ).style.display="none";
+
+  }
+
+  else{
+
+    stage=1;
+
+    score=0;
+
+    lives=3;
+
+    createStage();
+
+    document.getElementById(
+      "nextStage"
+    ).style.display="none";
+
+  }
+
+};
+
+
+/* ==================================
+   RESTART BUTTON
+================================== */
+
+const restart=document.createElement("button");
+
+restart.innerText="🔄";
+
+restart.style.position="fixed";
+restart.style.top="20px";
+restart.style.right="20px";
+restart.style.width="50px";
+restart.style.height="50px";
+restart.style.border="0";
+restart.style.borderRadius="12px";
+restart.style.background="rgba(0,0,0,.4)";
+restart.style.color="white";
+restart.style.fontSize="22px";
+
+restart.onclick=()=>{
+
+  stage=1;
+  score=0;
+  lives=3;
+
+  createStage();
+
+};
+
+document.body.appendChild(restart);
+
+
+/* ==================================
+   INPUT
+================================== */
+
+function holdButton(id,key){
+
+  const button=
+    document.getElementById(id);
+
+
+  button.addEventListener(
+    "touchstart",
+    e=>{
+      e.preventDefault();
+      keys[key]=true;
+    }
+  );
+
+
+  button.addEventListener(
+    "touchend",
+    e=>{
+      e.preventDefault();
+      keys[key]=false;
+    }
+  );
+
+
+  button.addEventListener(
+    "mousedown",
+    ()=>{
+      keys[key]=true;
+    }
+  );
+
+
+  button.addEventListener(
+    "mouseup",
+    ()=>{
+      keys[key]=false;
+    }
+  );
+
+
+  button.addEventListener(
+    "mouseleave",
+    ()=>{
+      keys[key]=false;
+    }
+  );
+
+}
+
+
+holdButton("left","left");
+
+holdButton("right","right");
+
+
+document.getElementById(
+  "jump"
+).addEventListener(
+  "touchstart",
+  e=>{
+    e.preventDefault();
+    jump();
+  }
+);
+
+
+document.getElementById(
+  "jump"
+).addEventListener(
+  "mousedown",
+  jump
+);
+
+
+document.getElementById(
+  "shoot"
+).addEventListener(
+  "touchstart",
+  e=>{
+    e.preventDefault();
+    shoot();
+  }
+);
+
+
+document.getElementById(
+  "shoot"
+).addEventListener(
+  "mousedown",
+  shoot
+);
+
+
+/* ==================================
+   KEYBOARD
+================================== */
+
+document.addEventListener(
+  "keydown",
+  e=>{
+
+    if(e.key==="ArrowLeft")
+      keys.left=true;
+
+    if(e.key==="ArrowRight")
+      keys.right=true;
+
+    if(
+      e.key==="ArrowUp" ||
+      e.key===" "
+    )
+      jump();
+
+    if(e.key==="z")
+      shoot();
+
+  }
+);
+
+
+document.addEventListener(
+  "keyup",
+  e=>{
+
+    if(e.key==="ArrowLeft")
+      keys.left=false;
+
+    if(e.key==="ArrowRight")
+      keys.right=false;
+
+  }
+);
+
+
+/* ==================================
+   MAIN LOOP
+================================== */
+
+function update(){
+
+  if(won || gameOver)
+    return;
+
+  updatePlayer();
+
+  updateCoins();
+
+  updatePickups();
+
+  updateEnemies();
+
+  updateBullets();
+
+  updateBoss();
+
+  updateCamera();
+
+  updateFinish();
+
+}
+
+
+function draw(){
+
+  drawBackground();
+
+  drawWorld();
+
+  drawUI();
+
+
+  if(won && stage<10){
+
+    document.getElementById(
+      "nextStage"
+    ).style.display="block";
+
+  }
+
+  else{
+
+    document.getElementById(
+      "nextStage"
+    ).style.display="none";
+
+  }
+
+}
+
+
+function gameLoop(){
+
+  update();
+
+  draw();
+
+  requestAnimationFrame(gameLoop);
+
+}
+
+
+createStage();
+
+gameLoop();
+
+</script>
+
+</body>
+  </html>
